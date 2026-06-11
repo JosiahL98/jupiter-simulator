@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Jupiter — System Explorer</title>
+<style>
+  :root{
+    --bg:#04060c;
+    --panel:rgba(8,11,18,0.74);
+    --line:#2a3346;
+    --text:#dfe3ec;
+    --dim:#8b93a7;
+    --accent:#d96c3c;
+    --cream:#e9d8b4;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--mono);}
+  canvas{display:block;touch-action:none;cursor:grab;}
+  canvas:active{cursor:grabbing;}
+
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:1;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);}
+
+  .panel{position:fixed;z-index:3;background:var(--panel);border:1px solid var(--line);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);padding:14px 16px;}
+
+  /* title */
+  .title{top:18px;left:18px;border-left:2px solid var(--accent);}
+  .title h1{font-size:20px;font-weight:600;letter-spacing:0.32em;color:var(--cream);}
+  .title p{font-size:10px;letter-spacing:0.12em;color:var(--dim);margin-top:5px;text-transform:uppercase;}
+
+  /* body chips */
+  .chips{top:18px;left:50%;transform:translateX(-50%);display:flex;gap:0;padding:0;border:1px solid var(--line);}
+  .chips button{appearance:none;background:transparent;border:none;border-right:1px solid var(--line);
+    color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:0.16em;
+    padding:10px 14px;cursor:pointer;transition:color .15s, background .15s;}
+  .chips button:last-child{border-right:none;}
+  .chips button:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .chips button.active{color:var(--cream);background:rgba(217,108,60,0.14);box-shadow:inset 0 -2px 0 var(--accent);}
+  .chips button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+
+  /* hint */
+  .hint{top:18px;right:18px;font-size:10px;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;
+    transition:opacity 0.8s;}
+  .hint.hidden{opacity:0;pointer-events:none;}
+
+  /* info panel */
+  .info{bottom:18px;left:18px;width:290px;}
+  .info .collapse{position:absolute;top:10px;right:10px;appearance:none;background:transparent;
+    border:1px solid var(--line);color:var(--dim);font-family:var(--mono);font-size:12px;
+    width:24px;height:24px;line-height:1;cursor:pointer;transition:color .15s,border-color .15s;}
+  .info .collapse:hover{color:var(--cream);border-color:var(--accent);}
+  .info .collapse:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+  .info.collapsed .row,.info.collapsed .fact,.info.collapsed .note{display:none;}
+  .info.collapsed h2{margin-bottom:0;}
+  .info .type{font-size:9px;letter-spacing:0.2em;color:var(--accent);text-transform:uppercase;}
+  .info h2{font-size:24px;font-weight:600;letter-spacing:0.18em;color:var(--cream);margin:4px 0 12px;}
+  .info .row{display:flex;justify-content:space-between;gap:12px;font-size:11px;
+    padding:5px 0;border-top:1px solid rgba(42,51,70,0.6);}
+  .info .row .k{color:var(--dim);letter-spacing:0.06em;}
+  .info .row .v{text-align:right;}
+  .info .fact{margin-top:12px;font-size:11px;line-height:1.65;color:var(--dim);}
+  .info .note{margin-top:10px;font-size:9px;letter-spacing:0.08em;color:#5b6378;text-transform:uppercase;}
+
+  /* time controls */
+  .time{bottom:18px;right:18px;display:flex;flex-direction:column;align-items:flex-end;gap:8px;background:none;border:none;padding:0;backdrop-filter:none;}
+  .clock{font-size:11px;letter-spacing:0.12em;color:var(--cream);background:var(--panel);
+    border:1px solid var(--line);padding:8px 12px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+  .speeds{display:flex;border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+  .speeds button{appearance:none;background:transparent;border:none;border-right:1px solid var(--line);
+    color:var(--dim);font-family:var(--mono);font-size:11px;padding:9px 13px;cursor:pointer;min-width:46px;
+    transition:color .15s, background .15s;}
+  .speeds button:last-child{border-right:none;}
+  .speeds button:hover{color:var(--text);background:rgba(255,255,255,0.04);}
+  .speeds button.active{color:var(--cream);background:rgba(217,108,60,0.14);box-shadow:inset 0 -2px 0 var(--accent);}
+  .speeds button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+
+  /* floating moon labels */
+  #labels{position:fixed;inset:0;z-index:2;pointer-events:none;}
+  .moonlabel{position:absolute;transform:translate(-50%,-130%);pointer-events:auto;
+    appearance:none;background:rgba(8,11,18,0.55);border:1px solid rgba(42,51,70,0.8);
+    color:var(--dim);font-family:var(--mono);font-size:9px;letter-spacing:0.18em;
+    padding:3px 7px;cursor:pointer;transition:color .15s,border-color .15s;white-space:nowrap;}
+  .moonlabel:hover{color:var(--cream);border-color:var(--accent);}
+  .moonlabel.tracked{color:var(--cream);border-color:var(--accent);}
+  .moonlabel:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+
+  .fallback{position:fixed;inset:0;display:none;place-items:center;z-index:10;text-align:center;
+    font-size:12px;color:var(--dim);line-height:1.8;padding:24px;}
+
+  @media (max-width:720px){
+    .hint{display:none;}
+    .title{top:12px;left:12px;padding:10px 12px;}
+    .title h1{font-size:15px;}
+    .title p{font-size:8px;}
+    .chips{top:auto;bottom:172px;left:50%;max-width:calc(100vw - 24px);overflow-x:auto;}
+    .chips button{padding:9px 10px;font-size:9px;}
+    .info{bottom:64px;left:12px;right:12px;width:auto;padding:12px 14px;}
+    .info h2{font-size:18px;margin-bottom:8px;}
+    .info .fact{display:none;}
+    .time{bottom:12px;right:12px;left:12px;flex-direction:row;justify-content:space-between;align-items:center;}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    .chips button,.speeds button,.moonlabel{transition:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="vignette"></div>
+<div id="labels"></div>
+
+<div class="panel title">
+  <h1>JUPITER</h1>
+  <p>System explorer &middot; 5.2 AU &middot; procedural model</p>
+</div>
+
+<div class="chips panel" id="chips" role="tablist" aria-label="Select body"></div>
+
+<div class="hint panel" id="hint">drag orbit &middot; scroll zoom &middot; click a body</div>
+
+<div class="panel info" id="infoPanel">
+  <button class="collapse" id="iToggle" aria-label="Collapse info panel" aria-expanded="true">&ndash;</button>
+  <div class="type" id="iType"></div>
+  <h2 id="iName"></h2>
+  <div class="row"><span class="k">Diameter</span><span class="v" id="iDia"></span></div>
+  <div class="row"><span class="k" id="iPerK"></span><span class="v" id="iPer"></span></div>
+  <div class="row"><span class="k">Dist. from Jupiter</span><span class="v" id="iDist"></span></div>
+  <p class="fact" id="iFact"></p>
+  <p class="note">orbit distances compressed for view</p>
+</div>
+
+<div class="time">
+  <div class="clock" id="clock">T+ 0.0 d</div>
+  <div class="speeds" id="speeds" role="group" aria-label="Simulation speed">
+    <button data-s="0" aria-label="Pause">&#10074;&#10074;</button>
+    <button data-s="1" class="active">1&times;</button>
+    <button data-s="3600" aria-label="One hour per second">1h/s</button>
+    <button data-s="86400" aria-label="One day per second">1d/s</button>
+  </div>
+</div>
+
+<div class="fallback" id="fallback"><div>WebGL is not available in this browser.<br>The explorer needs GPU rendering to run.</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* ---------------------------------- data ---------------------------------- */
+
+const BODIES = {
+  jupiter: {
+    name:'JUPITER', type:'Gas giant · fifth planet',
+    dia:'139,820 km', perK:'Rotation period', per:'9 h 56 m', dist:'—',
+    fact:'The Great Red Spot is a storm wider than Earth, observed continuously since 1878. Jupiter holds 2.5 times the mass of every other planet combined.',
+    minDist:2.1, goalDist:7.5
+  },
+  io: {
+    name:'IO', type:'Innermost Galilean moon',
+    dia:'3,643 km', perK:'Orbital period', per:'1.77 days', dist:'421,700 km',
+    fact:'The most volcanically active body in the solar system — over 400 active volcanoes, powered by relentless tidal squeezing from Jupiter\u2019s gravity.',
+    radius:0.105, orbit:2.7, period:1.769, phase:0.4,
+    colA:[0.85,0.74,0.34], colB:[0.55,0.33,0.15], noise:5.0, crack:0.0, seed:3.1,
+    minDist:0.35, goalDist:1.5
+  },
+  europa: {
+    name:'EUROPA', type:'Ice-shell ocean world',
+    dia:'3,122 km', perK:'Orbital period', per:'3.55 days', dist:'671,000 km',
+    fact:'Beneath its fractured ice shell lies a salty ocean holding roughly twice as much liquid water as all of Earth\u2019s oceans combined.',
+    radius:0.090, orbit:3.5, period:3.551, phase:2.3,
+    colA:[0.93,0.90,0.84], colB:[0.74,0.64,0.52], noise:4.0, crack:0.55, seed:7.7,
+    minDist:0.32, goalDist:1.4
+  },
+  ganymede: {
+    name:'GANYMEDE', type:'Largest moon in the solar system',
+    dia:'5,268 km', perK:'Orbital period', per:'7.15 days', dist:'1,070,000 km',
+    fact:'Bigger than the planet Mercury, and the only moon known to generate its own magnetic field. Locked in a 1:2:4 resonance with Europa and Io.',
+    radius:0.150, orbit:4.5, period:7.155, phase:4.4,
+    colA:[0.66,0.60,0.50], colB:[0.38,0.32,0.26], noise:4.5, crack:0.0, seed:12.9,
+    minDist:0.4, goalDist:1.8
+  },
+  callisto: {
+    name:'CALLISTO', type:'Outer Galilean moon',
+    dia:'4,821 km', perK:'Orbital period', per:'16.69 days', dist:'1,883,000 km',
+    fact:'The most heavily cratered body in the solar system — its ancient, battered surface has been geologically dead for around four billion years.',
+    radius:0.137, orbit:5.9, period:16.689, phase:5.6,
+    colA:[0.46,0.40,0.33], colB:[0.24,0.20,0.16], noise:6.5, crack:0.0, seed:21.3,
+    minDist:0.4, goalDist:1.7
+  }
+};
+const MOON_KEYS = ['io','europa','ganymede','callisto'];
+const JUPITER_R = 1.4;
+const JUPITER_DAY = 0.4135;            // days per rotation
+const DAYS_PER_SEC_1X = 1 / 86400;     // 1x = real time, one second per second
+
+/* --------------------------------- renderer -------------------------------- */
+
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias:true });
+} catch(e) {
+  document.getElementById('fallback').style.display = 'grid';
+  return;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x04060c);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.05, 300);
+
+const SUN_DIR = new THREE.Vector3(1.0, 0.28, 0.55).normalize();
+
+/* ------------------------------- GLSL chunks ------------------------------- */
+
+const NOISE_GLSL = `
+vec3 mod289(vec3 x){return x - floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x - floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g  = step(x0.yzx, x0.xyz);
+  vec3 l  = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+        i.z + vec4(0.0, i1.z, i2.z, 1.0))
+      + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+      + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0*floor(p*ns.z*ns.z);
+  vec4 x_ = floor(j*ns.z);
+  vec4 y_ = floor(j - 7.0*x_);
+  vec4 x = x_*ns.x + ns.yyyy;
+  vec4 y = y_*ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m*m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+float fbm(vec3 p){
+  float f = 0.0;
+  float a = 0.5;
+  for(int i = 0; i < 5; i++){
+    f += a * snoise(p);
+    p *= 2.02;
+    a *= 0.5;
+  }
+  return f;
+}
+`;
+
+const COMMON_VERT = `
+varying vec3 vObjPos;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
+void main(){
+  vObjPos = position;
+  vWorldNormal = normalize(mat3(modelMatrix) * normal);
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPos = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}
+`;
+
+/* ------------------------------ Jupiter shader ----------------------------- */
+
+const jupiterFrag = NOISE_GLSL + `
+varying vec3 vObjPos;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
+uniform float uTime;
+uniform vec3 uLightDir;
+uniform vec3 uCamPos;
+
+vec3 rotY(vec3 v, float a){
+  float c = cos(a), s = sin(a);
+  return vec3(c*v.x + s*v.z, v.y, -s*v.x + c*v.z);
+}
+vec3 rotAxis(vec3 v, vec3 k, float a){
+  float c = cos(a), s = sin(a);
+  return v*c + cross(k, v)*s + k*dot(k, v)*(1.0 - c);
+}
+
+void main(){
+  vec3 p = normalize(vObjPos);
+  float latitude = asin(clamp(p.y, -1.0, 1.0));
+
+  float jets = sin(latitude*9.0)*0.55 + sin(latitude*4.5 + 1.3)*0.3;
+
+  // Great Red Spot: elliptical vortex (~2:1 wider in longitude, like the
+  // real one), anchored in UN-sheared space so it stays coherent over time
+  vec3 grs = normalize(vec3(cos(-0.40), sin(-0.40), 0.0));
+  vec3 east = normalize(cross(vec3(0.0, 1.0, 0.0), grs));
+  vec3 north = normalize(cross(grs, east));
+  float du = dot(p, east);
+  float dv = dot(p, north);
+  float ed = sqrt((du*du)/(0.50*0.50) + (dv*dv)/(0.26*0.26));
+  ed += (1.0 - step(0.0, dot(p, grs))) * 10.0; // gate: kill antipodal mirror spot
+  float spotMask = 1.0 - smoothstep(0.0, 1.0, ed);
+  float swirl = spotMask*spotMask * (3.4 + 0.5*sin(uTime*0.05));
+  vec3 p2 = rotAxis(p, grs, swirl);
+
+  // zonal jet flow via flow-map blending: two samples on offset sawtooth
+  // phases, cross-faded so shear stays bounded forever instead of growing
+  float flowT = uTime * 0.06;
+  float f1 = fract(flowT);
+  float f2 = fract(flowT + 0.5);
+  float w  = abs(f1 - 0.5) * 2.0;
+  float AMP = 1.2;
+  vec3 q1 = rotY(p2, (f1 - 0.5) * AMP * jets);
+  vec3 q2 = rotY(p2, (f2 - 0.5) * AMP * jets);
+  vec3 drift = vec3(0.0, uTime*0.004, uTime*0.002);
+
+  float warp1 = fbm(q1*2.5 + drift);
+  float warp2 = fbm(q2*2.5 + drift);
+  float warp  = mix(warp1, warp2, w);
+  float detail = mix(fbm(q1*7.0 + vec3(warp1)), fbm(q2*7.0 + vec3(warp2)), w);
+
+  // irregular belt/zone structure: layered incommensurate frequencies give
+  // unequal band widths; cream-dominant with brown belts, pale equator
+  float y = p2.y;
+  float prof = sin(y*6.5 + 1.6*sin(y*2.7 + 0.7) + warp*1.8);
+  prof += 0.5*sin(y*13.0 + 1.1 + warp*2.4);
+  prof += 0.25*sin(y*23.0 + 4.0 + warp*1.3);
+  prof /= 1.75;
+  float beltAmt = smoothstep(-0.45, 0.40, prof);
+  beltAmt *= smoothstep(0.04, 0.13, abs(y));
+
+  vec3 zone = vec3(0.89, 0.84, 0.72);
+  vec3 belt = vec3(0.62, 0.42, 0.28);
+  vec3 deep = vec3(0.43, 0.28, 0.20);
+  vec3 col = mix(zone, belt, beltAmt);
+  col = mix(col, deep, smoothstep(0.55, 1.0, prof)*0.5);
+  col += (fbm(p2*1.6) - 0.1) * 0.1 * vec3(1.0, 0.9, 0.8);
+  col += detail*0.06;
+
+  // hazy desaturated poles
+  float pole = smoothstep(0.62, 0.95, abs(p.y));
+  col = mix(col, vec3(0.60, 0.56, 0.50) + detail*0.05, pole*0.8);
+
+  // spot coloring + pale collar (elliptical units: ed = 1 at spot edge)
+  float core = 1.0 - smoothstep(0.0, 0.85, ed);
+  vec3 spotCol = mix(vec3(0.80, 0.46, 0.30), vec3(0.72, 0.25, 0.13), core);
+  spotCol += detail*0.08;
+  col = mix(col, spotCol, smoothstep(0.08, 0.65, core + spotMask*0.35)*0.92);
+  float collar = (1.0 - smoothstep(1.0, 1.45, ed)) * smoothstep(0.6, 0.95, ed);
+  col = mix(col, vec3(0.92, 0.89, 0.82), collar*0.45);
+
+  // lighting + gas-giant limb darkening
+  vec3 N = normalize(vWorldNormal);
+  float diff = max(dot(N, uLightDir), 0.0);
+  float light = 0.10 + 0.95*pow(diff, 0.9);
+  vec3 V = normalize(uCamPos - vWorldPos);
+  float ndv = max(dot(N, V), 0.0);
+  light *= mix(0.5, 1.0, pow(ndv, 0.55));
+
+  gl_FragColor = vec4(col*light, 1.0);
+}
+`;
+
+const jupiterUniforms = {
+  uTime:     { value: 0 },
+  uLightDir: { value: SUN_DIR.clone() },
+  uCamPos:   { value: new THREE.Vector3() }
+};
+const jupiterMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(JUPITER_R, 96, 64),
+  new THREE.ShaderMaterial({ uniforms:jupiterUniforms, vertexShader:COMMON_VERT, fragmentShader:jupiterFrag })
+);
+scene.add(jupiterMesh);
+
+/* ----------------------------- atmosphere glow ----------------------------- */
+
+const atmoMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(JUPITER_R, 64, 48),
+  new THREE.ShaderMaterial({
+    vertexShader: `
+      varying vec3 vN;
+      void main(){
+        vN = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vN;
+      void main(){
+        float d = clamp(0.62 - dot(normalize(vN), vec3(0.0, 0.0, 1.0)), 0.0, 1.0);
+        float i = pow(d, 4.0) * 1.3;
+        gl_FragColor = vec4(vec3(0.96, 0.83, 0.58) * i, 1.0);
+      }`,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false
+  })
+);
+atmoMesh.scale.setScalar(1.12);
+scene.add(atmoMesh);
+
+/* --------------------------------- moons ----------------------------------- */
+
+const moonFrag = NOISE_GLSL + `
+varying vec3 vObjPos;
+varying vec3 vWorldNormal;
+varying vec3 vWorldPos;
+uniform vec3 uColA;
+uniform vec3 uColB;
+uniform float uNoiseScale;
+uniform float uCrack;
+uniform float uSeed;
+uniform vec3 uLightDir;
+uniform vec3 uCamPos;
+
+void main(){
+  vec3 p = normalize(vObjPos);
+  vec3 sp = p*uNoiseScale + vec3(uSeed);
+  float n = fbm(sp);
+  vec3 col = mix(uColB, uColA, smoothstep(-0.45, 0.5, n));
+  col += fbm(sp*3.0)*0.09;
+
+  // lineae for Europa-style surfaces
+  float crack = smoothstep(0.05, 0.0, abs(snoise(p*4.0 + vec3(uSeed*1.7))));
+  crack = max(crack, smoothstep(0.04, 0.0, abs(snoise(p*6.5 + vec3(uSeed*2.3)))) * 0.7);
+  col = mix(col, vec3(0.62, 0.45, 0.34), crack * uCrack);
+
+  vec3 N = normalize(vWorldNormal);
+  float diff = max(dot(N, uLightDir), 0.0);
+  float light = 0.10 + 1.0*pow(diff, 1.0);
+  gl_FragColor = vec4(col*light, 1.0);
+}
+`;
+
+const moons = {};
+const clickables = [jupiterMesh];
+jupiterMesh.userData.key = 'jupiter';
+
+MOON_KEYS.forEach(key => {
+  const d = BODIES[key];
+  const uniforms = {
+    uColA:       { value: new THREE.Vector3(...d.colA) },
+    uColB:       { value: new THREE.Vector3(...d.colB) },
+    uNoiseScale: { value: d.noise },
+    uCrack:      { value: d.crack },
+    uSeed:       { value: d.seed },
+    uLightDir:   { value: SUN_DIR.clone() },
+    uCamPos:     { value: new THREE.Vector3() }
+  };
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(d.radius, 48, 32),
+    new THREE.ShaderMaterial({ uniforms, vertexShader:COMMON_VERT, fragmentShader:moonFrag })
+  );
+  mesh.userData.key = key;
+  scene.add(mesh);
+  clickables.push(mesh);
+
+  // orbit path
+  const pts = [];
+  for (let i = 0; i < 160; i++) {
+    const a = (i/160)*Math.PI*2;
+    pts.push(new THREE.Vector3(Math.cos(a)*d.orbit, 0, Math.sin(a)*d.orbit));
+  }
+  const line = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color:0x2e3850, transparent:true, opacity:0.55 })
+  );
+  scene.add(line);
+
+  moons[key] = { mesh, data:d };
+});
+
+/* --------------------------------- stars ----------------------------------- */
+
+(function makeStars(){
+  const COUNT = 2600;
+  const pos = new Float32Array(COUNT*3);
+  const col = new Float32Array(COUNT*3);
+  const tints = [[1,1,1],[0.78,0.85,1],[1,0.92,0.78],[0.85,0.9,1]];
+  for (let i = 0; i < COUNT; i++) {
+    const u = Math.random()*2 - 1;
+    const th = Math.random()*Math.PI*2;
+    const r = 90 + Math.random()*60;
+    const s = Math.sqrt(1 - u*u);
+    pos[i*3]   = r*s*Math.cos(th);
+    pos[i*3+1] = r*u;
+    pos[i*3+2] = r*s*Math.sin(th);
+    const t = tints[(Math.random()*tints.length)|0];
+    const b = 0.35 + Math.random()*0.65;
+    col[i*3] = t[0]*b; col[i*3+1] = t[1]*b; col[i*3+2] = t[2]*b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+    size:0.5, vertexColors:true, sizeAttenuation:true, depthWrite:false
+  })));
+})();
+
+/* ---------------------------------- sun ------------------------------------ */
+
+(function makeSun(){
+  const sunPos = SUN_DIR.clone().multiplyScalar(125);
+
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(1.4, 24, 16),
+    new THREE.MeshBasicMaterial({ color:0xfff6dd })
+  );
+  core.position.copy(sunPos);
+  scene.add(core);
+
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0.00, 'rgba(255,246,220,1.0)');
+  g.addColorStop(0.15, 'rgba(255,228,168,0.55)');
+  g.addColorStop(0.45, 'rgba(255,196,120,0.15)');
+  g.addColorStop(1.00, 'rgba(255,180,100,0.0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c),
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false
+  }));
+  glow.scale.set(20, 20, 1);
+  glow.position.copy(sunPos);
+  scene.add(glow);
+})();
+
+/* ----------------------------- camera controls ----------------------------- */
+
+const cam = {
+  theta: 0.85, phi: 1.22, dist: 7.5,
+  vTheta: 0, vPhi: 0,
+  target: new THREE.Vector3(),
+  goalDist: null,
+  trackedKey: 'jupiter'
+};
+
+const pointers = new Map();
+let dragTravel = 0;
+let pinchDist = null;
+const cnv = renderer.domElement;
+
+cnv.addEventListener('pointerdown', e => {
+  cnv.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  dragTravel = 0;
+  cam.vTheta = 0; cam.vPhi = 0;
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
+  }
+});
+
+cnv.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  dragTravel += Math.abs(dx) + Math.abs(dy);
+
+  if (pointers.size === 1) {
+    cam.theta -= dx*0.0045;
+    cam.phi   -= dy*0.0045;
+    cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi));
+    cam.vTheta = -dx*0.0045;
+    cam.vPhi   = -dy*0.0045;
+  } else if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const nd = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchDist) {
+      cam.dist *= pinchDist / nd;
+      clampDist();
+      cam.goalDist = null;
+    }
+    pinchDist = nd;
+  }
+});
+
+function endPointer(e){
+  const was = pointers.has(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchDist = null;
+  if (was && pointers.size === 0 && dragTravel < 6) handleClick(e.clientX, e.clientY);
+}
+cnv.addEventListener('pointerup', endPointer);
+cnv.addEventListener('pointercancel', endPointer);
+
+cnv.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist *= Math.exp(e.deltaY * 0.0012);
+  cam.goalDist = null;
+  clampDist();
+}, { passive:false });
+
+function clampDist(){
+  const min = BODIES[cam.trackedKey].minDist;
+  cam.dist = Math.max(min, Math.min(40, cam.dist));
+}
+
+const raycaster = new THREE.Raycaster();
+function handleClick(x, y){
+  const ndc = new THREE.Vector2(
+    (x / window.innerWidth)*2 - 1,
+    -(y / window.innerHeight)*2 + 1
+  );
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(clickables);
+  if (hits.length) selectBody(hits[0].object.userData.key);
+}
+
+/* ------------------------------ UI: selection ------------------------------ */
+
+const chipsEl = document.getElementById('chips');
+const ALL_KEYS = ['jupiter', ...MOON_KEYS];
+ALL_KEYS.forEach(key => {
+  const b = document.createElement('button');
+  b.textContent = BODIES[key].name;
+  b.dataset.key = key;
+  b.setAttribute('role', 'tab');
+  b.addEventListener('click', () => selectBody(key));
+  chipsEl.appendChild(b);
+});
+
+const labelsEl = document.getElementById('labels');
+const labelBtns = {};
+MOON_KEYS.forEach(key => {
+  const b = document.createElement('button');
+  b.className = 'moonlabel';
+  b.textContent = BODIES[key].name;
+  b.addEventListener('click', () => selectBody(key));
+  labelsEl.appendChild(b);
+  labelBtns[key] = b;
+});
+
+const $ = id => document.getElementById(id);
+
+function selectBody(key){
+  cam.trackedKey = key;
+  cam.goalDist = BODIES[key].goalDist;
+
+  const d = BODIES[key];
+  $('iType').textContent = d.type;
+  $('iName').textContent = d.name;
+  $('iDia').textContent  = d.dia;
+  $('iPerK').textContent = d.perK;
+  $('iPer').textContent  = d.per;
+  $('iDist').textContent = d.dist;
+  $('iFact').textContent = d.fact;
+
+  chipsEl.querySelectorAll('button').forEach(b =>
+    b.classList.toggle('active', b.dataset.key === key));
+  MOON_KEYS.forEach(k =>
+    labelBtns[k].classList.toggle('tracked', k === key));
+}
+
+/* -------------------------------- UI: time --------------------------------- */
+
+// hint fades once you've had a moment to read it
+const hintEl = document.getElementById('hint');
+setTimeout(() => hintEl.classList.add('hidden'), 7000);
+renderer.domElement.addEventListener('pointerdown', () => hintEl.classList.add('hidden'), { once:true });
+
+// collapsible info panel
+const infoPanel = document.getElementById('infoPanel');
+const iToggle = document.getElementById('iToggle');
+iToggle.addEventListener('click', () => {
+  const collapsed = infoPanel.classList.toggle('collapsed');
+  iToggle.innerHTML = collapsed ? '+' : '&ndash;';
+  iToggle.setAttribute('aria-expanded', String(!collapsed));
+  iToggle.setAttribute('aria-label', collapsed ? 'Expand info panel' : 'Collapse info panel');
+});
+
+let speedMult = 1;
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduceMotion) speedMult = 0;
+
+const speedsEl = document.getElementById('speeds');
+speedsEl.querySelectorAll('button').forEach(b => {
+  if (reduceMotion) b.classList.toggle('active', b.dataset.s === '0');
+  b.addEventListener('click', () => {
+    speedMult = parseFloat(b.dataset.s);
+    speedsEl.querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+  });
+});
+
+const clockEl = document.getElementById('clock');
+function fmtClock(days){
+  const s = days*86400;
+  if (s < 60)    return 'T+ ' + Math.floor(s) + 's';
+  if (s < 3600)  return 'T+ ' + Math.floor(s/60) + 'm ' + Math.floor(s%60) + 's';
+  if (s < 86400) return 'T+ ' + Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+  const d = Math.floor(days);
+  return 'T+ ' + d + 'd ' + Math.floor((days - d)*24) + 'h';
+}
+
+/* ------------------------------- main loop --------------------------------- */
+
+let simDays = 0;
+const clock = new THREE.Clock();
+const tmpV = new THREE.Vector3();
+const moonWorld = new THREE.Vector3();
+
+selectBody('jupiter');
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  simDays += dt * speedMult * DAYS_PER_SEC_1X;
+  clockEl.textContent = fmtClock(simDays);
+
+  // planet spin + cloud time
+  jupiterMesh.rotation.y = (Math.PI*2) * simDays / JUPITER_DAY;
+  jupiterUniforms.uTime.value = simDays * 25.0;
+
+  // moon orbits (tidally locked rotation)
+  MOON_KEYS.forEach(key => {
+    const m = moons[key];
+    const ang = m.data.phase + (Math.PI*2) * simDays / m.data.period;
+    m.mesh.position.set(Math.cos(ang)*m.data.orbit, 0, Math.sin(ang)*m.data.orbit);
+    m.mesh.rotation.y = -ang + Math.PI;
+  });
+
+  // camera inertia
+  if (pointers.size === 0) {
+    cam.theta += cam.vTheta;
+    cam.phi   += cam.vPhi;
+    cam.phi = Math.max(0.05, Math.min(Math.PI - 0.05, cam.phi));
+    cam.vTheta *= 0.92;
+    cam.vPhi   *= 0.92;
+  }
+  if (cam.goalDist !== null) {
+    cam.dist += (cam.goalDist - cam.dist)*0.07;
+    if (Math.abs(cam.goalDist - cam.dist) < 0.005) cam.goalDist = null;
+  }
+
+  // follow tracked body
+  const trackPos = cam.trackedKey === 'jupiter'
+    ? tmpV.set(0, 0, 0)
+    : moons[cam.trackedKey].mesh.position;
+  cam.target.lerp(trackPos, 0.08);
+
+  const sp = Math.sin(cam.phi);
+  camera.position.set(
+    cam.target.x + cam.dist*sp*Math.cos(cam.theta),
+    cam.target.y + cam.dist*Math.cos(cam.phi),
+    cam.target.z + cam.dist*sp*Math.sin(cam.theta)
+  );
+  camera.lookAt(cam.target);
+
+  jupiterUniforms.uCamPos.value.copy(camera.position);
+  MOON_KEYS.forEach(key =>
+    moons[key].mesh.material.uniforms.uCamPos.value.copy(camera.position));
+
+  // floating labels: project, hide behind camera, fade when occluded by Jupiter
+  MOON_KEYS.forEach(key => {
+    const btn = labelBtns[key];
+    moonWorld.copy(moons[key].mesh.position);
+
+    const toMoon = moonWorld.clone().sub(camera.position);
+    const len = toMoon.length();
+    const dir = toMoon.divideScalar(len);
+    const tClosest = Math.max(0, Math.min(len, -camera.position.dot(dir)));
+    const closest = camera.position.clone().addScaledVector(dir, tClosest);
+    const occluded = closest.length() < JUPITER_R*0.98 && tClosest < len - 0.01;
+
+    const proj = moonWorld.project(camera);
+    if (proj.z > 1 || occluded) {
+      btn.style.display = 'none';
+    } else {
+      btn.style.display = '';
+      btn.style.left = ((proj.x*0.5 + 0.5) * window.innerWidth) + 'px';
+      btn.style.top  = ((-proj.y*0.5 + 0.5) * window.innerHeight) + 'px';
+    }
+  });
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+})();
+</script>
+</body>
+</html>
